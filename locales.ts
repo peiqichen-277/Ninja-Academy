@@ -2,7 +2,7 @@
 export const TRANSLATIONS = {
   en: {
     title: "SHINOBI ACADEMY",
-    subtitle: "Master the ancient arts through modern vision",
+    subtitle: "Channel Ancient Powers Through Hand Seals",
     jutsuScrolls: "Jutsu Scrolls",
     sealGuide: "Seal Guide",
     ninjaTips: "Ninja Tips",
@@ -28,7 +28,7 @@ export const TRANSLATIONS = {
   },
   zh: {
     title: "忍者学院",
-    subtitle: "通过现代视觉掌握古老艺术",
+    subtitle: "通过结印引导远古之力",
     jutsuScrolls: "忍术卷轴",
     sealGuide: "手印指南",
     ninjaTips: "忍者秘籍",
