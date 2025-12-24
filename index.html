@@ -32,11 +32,96 @@
         .fire-glow {
             box-shadow: 0 0 20px 8px rgba(239, 68, 68, 0.6);
         }
+        .animate-scan {
+            animation: scanline 3s linear infinite;
+        }
+        @keyframes scanline {
+            0% { top: 0; opacity: 0; }
+            5% { opacity: 1; }
+            95% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
         canvas {
             transform: scaleX(-1);
         }
         video {
             transform: scaleX(-1);
+        }
+
+        /* JUTSU ANIMATIONS */
+        @keyframes bounce-short {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+        .animate-bounce-short {
+          animation: bounce-short 0.5s ease-in-out infinite;
+        }
+
+        /* Chidori / Lightning */
+        @keyframes lightning-flash {
+          0%, 100% { background: transparent; }
+          10%, 30%, 50% { background: rgba(255, 255, 255, 0.4); }
+          20%, 40% { background: transparent; }
+        }
+        .animate-lightning-flash {
+          animation: lightning-flash 2s infinite;
+        }
+        .lightning-bolt {
+          position: absolute;
+          background: white;
+          width: 2px;
+          height: 100px;
+          box-shadow: 0 0 15px 5px #3b82f6;
+          opacity: 0;
+          animation: bolt-strike 0.3s infinite;
+        }
+        @keyframes bolt-strike {
+          0% { opacity: 0; height: 0; }
+          50% { opacity: 1; height: 100%; }
+          100% { opacity: 0; }
+        }
+        .bolt-1 { left: 20%; top: 10%; transform: rotate(-15deg); animation-delay: 0.1s; }
+        .bolt-2 { right: 25%; top: 30%; transform: rotate(10deg); animation-delay: 0.4s; }
+        .bolt-3 { left: 50%; bottom: 20%; transform: rotate(-5deg); animation-delay: 0.7s; }
+
+        /* Summoning / Smoke */
+        .summon-smoke {
+          position: absolute;
+          width: 200%;
+          height: 200%;
+          background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 70%);
+          left: -50%;
+          top: -50%;
+          border-radius: 50%;
+          animation: smoke-poof 1.5s forwards;
+        }
+        @keyframes smoke-poof {
+          0% { transform: scale(0.1); opacity: 0; }
+          30% { transform: scale(1.2); opacity: 1; }
+          100% { transform: scale(1.5); opacity: 0; }
+        }
+        .animate-spin-slow {
+          animation: spin 8s linear infinite;
+        }
+
+        /* Fireball */
+        .fireball-blast {
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(circle, #f97316 0%, #ef4444 40%, transparent 70%);
+          animation: fire-blast 2s infinite;
+        }
+        @keyframes fire-blast {
+          0% { transform: scale(0.8); opacity: 0.5; }
+          50% { transform: scale(1.1); opacity: 0.8; }
+          100% { transform: scale(0.8); opacity: 0.5; }
+        }
+        .animate-fire-rise {
+          animation: fire-rise 1s linear infinite;
+        }
+        @keyframes fire-rise {
+          0% { transform: translateY(0); opacity: 0.8; }
+          100% { transform: translateY(-50px); opacity: 0; }
         }
     </style>
 <script type="importmap">

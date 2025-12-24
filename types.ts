@@ -18,6 +18,7 @@ export interface Jutsu {
   sequence: string[]; 
   element: 'fire' | 'water' | 'lightning' | 'earth' | 'wind' | 'neutral';
   difficulty: 'E-Rank' | 'D-Rank' | 'C-Rank' | 'B-Rank' | 'A-Rank' | 'S-Rank';
+  videoUrl?: string; // URL for the Jutsu animation clip
 }
 
 export interface RecognitionResult {

@@ -66,7 +66,8 @@ export const JUTSU_LIST: Jutsu[] = [
     description: { en: 'Concentrates lightning chakra into the palm.', zh: '将大量查克拉集中在手上形成高强度电流。' },
     sequence: ['ox', 'ram', 'monkey'],
     element: 'lightning',
-    difficulty: 'A-Rank'
+    difficulty: 'A-Rank',
+    videoUrl: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExOHYyYmd6Z3B6Z296Z296Z296Z296Z296Z296Z296Z296Z296Z29sJnBvcz1jJmN4PTEmY3k9MCZpZD1nZXRRUk93bmN6SkhRNCZpbmRleD0w/gS9878wnczJHQ4/giphy.mp4'
   },
   {
     id: 'summoning',
@@ -74,7 +75,8 @@ export const JUTSU_LIST: Jutsu[] = [
     description: { en: 'A space-time ninjutsu that allows the user to summon animals.', zh: '时空间忍术，允许忍者召唤与其签订契约的生物。' },
     sequence: ['boar', 'dog', 'bird', 'monkey', 'ram'],
     element: 'neutral',
-    difficulty: 'B-Rank'
+    difficulty: 'B-Rank',
+    videoUrl: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2J6Z3B6Z296Z296Z296Z296Z296Z296Z296Z296Z296Z29sJnBvcz1jJmN4PTEmY3k9MCZpZD1scXRRUk93bmN6SkhRNCZpbmRleD0w/l3vR8IAt21DMBfm9m/giphy.mp4'
   },
   {
     id: 'fireball',
@@ -82,6 +84,7 @@ export const JUTSU_LIST: Jutsu[] = [
     description: { en: 'A powerful technique that kneads chakra into fire.', zh: '将查克拉转化为火焰，从口中吐出巨大的火球。' },
     sequence: ['snake', 'ram', 'monkey', 'boar', 'horse', 'tiger'],
     element: 'fire',
-    difficulty: 'C-Rank'
+    difficulty: 'C-Rank',
+    videoUrl: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd3J6Z3B6Z296Z296Z296Z296Z296Z296Z296Z296Z296Z29sJnBvcz1jJmN4PTEmY3k9MCZpZD1scXRRUk93bmN6SkhRNCZpbmRleD0w/O9vO47n4n4n4U/giphy.mp4'
   }
 ];
