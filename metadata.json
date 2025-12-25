@@ -1,6 +1,6 @@
 {
   "name": "Shinobi Hand Sign Academy",
-  "description": "An interactive Naruto-inspired training app that uses Gemini Vision to teach you ninja hand seals and jutsu techniques in real-time.",
+  "description": "An interactive Naruto-inspired training app that uses high-performance local hand tracking to teach you ninja hand seals and jutsu techniques in real-time.",
   "requestFramePermissions": [
     "camera"
   ]
