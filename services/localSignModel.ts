@@ -1,91 +1,179 @@
 
+declare const ort: any;
+
 interface Point {
   x: number;
   y: number;
   z: number;
 }
 
-const FINGER_NAMES = ['Thumb', 'Index', 'Middle', 'Ring', 'Pinky'];
-const FINGER_TIPS = [4, 8, 12, 16, 20];
-const FINGER_MCP = [2, 5, 9, 13, 17];
+// Canonical Naruto hand seal labels
+const LABELS = [
+  'bird', 'boar', 'dog', 'dragon', 'hare', 'horse', 
+  'monkey', 'ox', 'ram', 'rat', 'snake', 'tiger'
+];
 
-const getDist = (p1: Point, p2: Point) => Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+let session: any = null;
+const INPUT_SIZE = 416;
 
-const isExtended = (landmarks: Point[], fIdx: number) => {
-  const palm = landmarks[0];
-  const tip = landmarks[FINGER_TIPS[fIdx]];
-  const mcp = landmarks[FINGER_MCP[fIdx]];
-  return getDist(tip, palm) > getDist(mcp, palm) * 1.15;
+/**
+ * Initializes ONNX Runtime with a resilient fetching strategy.
+ */
+export const initOnnxModel = async () => {
+  if (session) return;
+  try {
+    console.log("Shinobi Academy: Preparing the YOLOX Summoning Ritual...");
+    
+    // 1. Configure ONNX Runtime environment
+    // Setting proxy to false to avoid worker-fetch issues in some environments
+    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/';
+    ort.env.wasm.proxy = false; 
+    ort.env.wasm.numThreads = 1;
+
+    // 2. Define source and proxy rotation
+    const driveId = '18HvHluoCAkzRqNwTDkOh3JgP0jBlaT8x';
+    // Adding a cache-buster to the drive URL
+    const driveUrl = `https://docs.google.com/uc?export=download&id=${driveId}&t=${Date.now()}`;
+    
+    const proxies = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(driveUrl)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(driveUrl)}`,
+      `https://corsproxy.io/?${encodeURIComponent(driveUrl)}`
+    ];
+
+    let modelBuffer: ArrayBuffer | null = null;
+    let lastError = "";
+
+    for (const url of proxies) {
+      try {
+        console.log(`Attempting summon via: ${url.split('?')[0]}...`);
+        const response = await fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'omit'
+        });
+
+        if (response.ok) {
+          const buffer = await response.arrayBuffer();
+          // Check if it's actually an ONNX file (usually starts with a specific magic number or is large enough)
+          // If it's < 100KB, it's likely a Google Drive "Virus Warning" HTML page
+          if (buffer.byteLength > 200000) {
+            modelBuffer = buffer;
+            console.log("Scroll acquired! Length:", buffer.byteLength);
+            break;
+          } else {
+            console.warn("Fetched scroll is too small, likely a warning page. Trying next proxy...");
+          }
+        } else {
+          console.warn(`Proxy returned status ${response.status}.`);
+        }
+      } catch (e: any) {
+        lastError = e.message;
+        console.warn(`Proxy fetch error: ${e.message}`);
+      }
+    }
+
+    if (!modelBuffer) {
+      throw new Error(`All summoning proxies failed. Last error: ${lastError || 'Access Denied'}`);
+    }
+
+    // 3. Create Inference Session from the successfully fetched buffer
+    session = await ort.InferenceSession.create(modelBuffer, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all'
+    });
+
+    console.log("%c YOLOX SCROLL UNROLLED: ACTIVATED SUCCESSFULLY ", "background: #f97316; color: white; font-weight: bold; padding: 4px;");
+  } catch (e: any) {
+    console.error("YOLOX Activation Failed:", e.message);
+    // Propagate error to UI if needed
+    throw e;
+  }
 };
 
-export const getPoseDescription = (multiHandLandmarks: any[]): string => {
-  if (!multiHandLandmarks || multiHandLandmarks.length === 0) return "No hands visible.";
+/**
+ * Prepares the video frame for YOLOX.
+ */
+const preprocess = (video: HTMLVideoElement): Float32Array => {
+  const canvas = document.createElement('canvas');
+  canvas.width = INPUT_SIZE;
+  canvas.height = INPUT_SIZE;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new Float32Array();
 
-  return multiHandLandmarks.map((hand, index) => {
-    const ext = FINGER_TIPS.map((_, i) => isExtended(hand, i));
-    const count = ext.filter(v => v).length;
-    const upright = hand[8].y < hand[0].y;
-    return `Hand ${index + 1}: ${count} fingers up (${upright ? 'Upright' : 'Flat'})`;
-  }).join(' | ');
+  // Flip horizontally to match the mirrored video stream
+  ctx.save();
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, -INPUT_SIZE, 0, INPUT_SIZE, INPUT_SIZE);
+  ctx.restore();
+
+  const imageData = ctx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE);
+  const { data } = imageData;
+
+  const floatData = new Float32Array(3 * INPUT_SIZE * INPUT_SIZE);
+  const offset = INPUT_SIZE * INPUT_SIZE;
+
+  // BGR [0, 1] normalization
+  for (let i = 0; i < offset; i++) {
+    floatData[i] = data[i * 4 + 2] / 255.0;       // B
+    floatData[i + offset] = data[i * 4 + 1] / 255.0; // G
+    floatData[i + 2 * offset] = data[i * 4] / 255.0; // R
+  }
+  return floatData;
 };
 
-export const getStandardSealDefinition = (signId: string): string => {
-  const definitions: Record<string, string> = {
-    'tiger': "Hands joined, both index fingers and thumbs extended upward, others folded.",
-    'snake': "Hands joined, all fingers interlaced and folded.",
-    'ram': "Left hand fingers extended upward, covering the right hand.",
-    'monkey': "Hands pressed together, palms flat, fingers horizontal.",
-    'boar': "Fists pressed together, knuckles touching.",
-    'horse': "Index fingers touching at tips, others interlaced.",
-    'ox': "Right hand flat across the left hand back.",
-    'dog': "Left hand flat on top of right fist.",
-    'bird': "Tips of fingers touching in a peak.",
-    'dragon': "Fingers interlaced, pinkies extended.",
-    'hare': "Left hand C-shape, right index through.",
-    'rat': "Right hand gripping left index/middle."
-  };
-  return definitions[signId] || "A standard ninja seal.";
-};
+/**
+ * Decodes anchor-free YOLOX output tensor.
+ */
+const decodeYolox = (output: any, numClasses: number) => {
+  const data = output.data;
+  const numPredictions = data.length / (5 + numClasses);
+  
+  let bestScore = -1;
+  let bestClass = -1;
 
-export const classifySignLocally = (multiHandLandmarks: any[]): string | null => {
-  if (!multiHandLandmarks || multiHandLandmarks.length === 0) return null;
-
-  const h1 = multiHandLandmarks[0];
-  const h1Ext = FINGER_TIPS.map((_, i) => isExtended(h1, i));
-  const h1Count = h1Ext.filter(v => v).length;
-
-  // Single hand signs (or fallback detection)
-  if (multiHandLandmarks.length === 1) {
-    if (h1Count >= 4 && !h1Ext[0]) return 'dog'; // Dog simplified
-    if (h1Count <= 1) return 'boar'; // Boar simplified
-    return null;
+  for (let i = 0; i < numPredictions; i++) {
+    const start = i * (5 + numClasses);
+    const objectness = data[start + 4];
+    
+    if (objectness > 0.4) { // Higher threshold for object presence
+      for (let c = 0; c < numClasses; c++) {
+        const classProb = data[start + 5 + c];
+        const score = objectness * classProb;
+        if (score > bestScore) {
+          bestScore = score;
+          bestClass = c;
+        }
+      }
+    }
   }
 
-  const h2 = multiHandLandmarks[1];
-  const h2Ext = FINGER_TIPS.map((_, i) => isExtended(h2, i));
-  const h2Count = h2Ext.filter(v => v).length;
-  const dist = getDist(h1[0], h2[0]);
+  return { classId: bestClass, confidence: bestScore };
+};
 
-  // Two hand logic
-  if (dist < 0.35) {
-    // TIGER: 2 fingers up on each hand (index/thumb)
-    if (h1Count >= 2 && h1Count <= 3 && h2Count >= 2 && h2Count <= 3 && h1Ext[1] && h2Ext[1]) return 'tiger';
-    
-    // RAM: Index/Middle up on primary
-    if (h1Ext[1] && h1Ext[2] && h1Count <= 3) return 'ram';
+export const classifySignLocally = async (video: HTMLVideoElement | null): Promise<string | null> => {
+  if (!session || !video) return null;
 
-    // SNAKE: Fists together/all down
-    if (h1Count <= 1 && h2Count <= 1) return 'snake';
+  try {
+    const inputData = preprocess(video);
+    if (inputData.length === 0) return null;
 
-    // MONKEY: Palms flat together
-    if (h1Count >= 4 && h2Count >= 4 && dist < 0.15) return 'monkey';
+    const inputTensor = new ort.Tensor('float32', inputData, [1, 3, INPUT_SIZE, INPUT_SIZE]);
+    const results = await session.run({ [session.inputNames[0]]: inputTensor });
+    const output = results[session.outputNames[0]];
 
-    // DOG: One flat (h1), one fist (h2)
-    if (h1Count >= 4 && h2Count <= 1 && h1[0].y < h2[0].y) return 'dog';
-    
-    // OX: Both flat, one over other
-    if (h1Count >= 4 && h2Count >= 4 && h1[0].y < h2[0].y) return 'ox';
+    const { classId, confidence } = decodeYolox(output, LABELS.length);
+
+    if (confidence > 0.6) {
+      return LABELS[classId];
+    }
+  } catch (e) {
+    // Inference skipped for this frame
   }
 
   return null;
+};
+
+export const getPoseDescription = (): string => {
+  return session ? "Byakugan Active" : "Sensors Offline";
 };

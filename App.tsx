@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { HAND_SIGNS, JUTSU_LIST } from './constants';
 import { Jutsu, Language } from './types';
-import { classifySignLocally, getPoseDescription } from './services/localSignModel';
+import { classifySignLocally, initOnnxModel, getPoseDescription } from './services/localSignModel';
 import { TRANSLATIONS } from './locales';
 
 declare const Hands: any;
@@ -20,10 +20,10 @@ const App: React.FC = () => {
   const [activeEffect, setActiveEffect] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState(0);
   const [chakra, setChakra] = useState(100);
+  const [modelState, setModelState] = useState<'loading' | 'ready' | 'error'>('loading');
   
   const [handDetected, setHandDetected] = useState(false);
-  const [currentPoseText, setCurrentPoseText] = useState("");
-  const [localDetectedSign, setLocalDetectedSign] = useState<string | null>(null);
+  const [detectedSign, setDetectedSign] = useState<string | null>(null);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -38,13 +38,27 @@ const App: React.FC = () => {
     stepRef.current = currentStep;
   }, [selectedJutsu, currentStep]);
 
+  const loadModel = useCallback(async () => {
+    setModelState('loading');
+    try {
+      await initOnnxModel();
+      setModelState('ready');
+    } catch (e) {
+      console.error("App: Model load failed", e);
+      setModelState('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadModel();
+  }, [loadModel]);
+
   const t = TRANSLATIONS[lang];
 
   useEffect(() => {
     if (!selectedJutsu) setFeedback(t.welcome);
   }, [lang, selectedJutsu, t.welcome]);
 
-  // Passive Chakra Recharge
   useEffect(() => {
     const timer = setInterval(() => {
       setChakra(prev => Math.min(100, prev + 5)); 
@@ -61,7 +75,7 @@ const App: React.FC = () => {
       setFeedback(`${jutsu.name[lang]} ${t.jutsuActivated}`);
       setActiveEffect(jutsu.id);
       setCurrentStep(step + 1);
-      setChakra(prev => Math.max(0, prev - 30)); // Casting cost
+      setChakra(prev => Math.max(0, prev - 30)); 
       setTimeout(() => {
         setActiveEffect(null);
         setSelectedJutsu(null);
@@ -74,7 +88,6 @@ const App: React.FC = () => {
     }
   }, [lang, t.jutsuActivated, t.nextSign]);
 
-  // Initialize Local MediaPipe Tracking
   useEffect(() => {
     if (!isCapturing) return;
 
@@ -85,44 +98,40 @@ const App: React.FC = () => {
     hands.setOptions({
       maxNumHands: 2,
       modelComplexity: 1,
-      minDetectionConfidence: 0.7,
-      minTrackingConfidence: 0.6
+      minDetectionConfidence: 0.55,
+      minTrackingConfidence: 0.55
     });
 
-    hands.onResults((results: any) => {
+    hands.onResults(async (results: any) => {
       const canvasCtx = overlayCanvasRef.current?.getContext('2d');
       if (!canvasCtx || !overlayCanvasRef.current) return;
       canvasCtx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
       
-      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        setHandDetected(true);
-        const poseText = getPoseDescription(results.multiHandLandmarks);
-        setCurrentPoseText(poseText);
+      const hasHands = results.multiHandLandmarks && results.multiHandLandmarks.length > 0;
+      setHandDetected(hasHands);
 
-        const sign = classifySignLocally(results.multiHandLandmarks);
-        setLocalDetectedSign(sign);
+      if (videoRef.current && modelState === 'ready') {
+        const sign = await classifySignLocally(videoRef.current);
+        if (sign) setDetectedSign(sign);
+      }
 
+      if (hasHands) {
         const currentJutsu = jutsuRef.current;
         const currentStepIdx = stepRef.current;
-        const isMatch = currentJutsu && sign === currentJutsu.sequence[currentStepIdx];
+        const isMatch = currentJutsu && detectedSign === currentJutsu.sequence[currentStepIdx];
         const color = isMatch ? '#10b981' : '#3b82f6';
 
         for (const landmarks of results.multiHandLandmarks) {
-          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color, lineWidth: 2});
+          drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color, lineWidth: 3});
           drawLandmarks(canvasCtx, landmarks, {color, lineWidth: 1, radius: 2});
         }
-      } else {
-        setHandDetected(false);
-        setLocalDetectedSign(null);
-        setCurrentPoseText("No hands visible.");
       }
     });
 
     handsInstanceRef.current = hands;
 
-    let camera: any = null;
     if (videoRef.current) {
-      camera = new Camera(videoRef.current, {
+      const camera = new Camera(videoRef.current, {
         onFrame: async () => {
           if (handsInstanceRef.current && videoRef.current) {
             try {
@@ -141,9 +150,8 @@ const App: React.FC = () => {
       if (cameraInstanceRef.current) cameraInstanceRef.current.stop();
       if (handsInstanceRef.current) handsInstanceRef.current.close();
     };
-  }, [isCapturing]);
+  }, [isCapturing, detectedSign, modelState]);
 
-  // Detection loop for progression
   useEffect(() => {
     if (!isCapturing || !selectedJutsu || activeEffect || !handDetected) {
       setScanProgress(0);
@@ -151,11 +159,11 @@ const App: React.FC = () => {
     }
 
     const currentTarget = selectedJutsu.sequence[currentStep];
-    const isLocalMatch = localDetectedSign === currentTarget;
+    const isMatch = detectedSign === currentTarget;
 
-    if (isLocalMatch) {
-      const interval = 50;
-      const totalTime = 800; // Hold seal for 0.8s
+    if (isMatch) {
+      const interval = 40;
+      const totalTime = 400; 
       const timer = setInterval(() => {
         setScanProgress(prev => {
           if (prev >= 100) {
@@ -169,9 +177,10 @@ const App: React.FC = () => {
     } else {
       setScanProgress(0);
     }
-  }, [isCapturing, selectedJutsu, activeEffect, handDetected, localDetectedSign, currentStep, progressToNext]);
+  }, [isCapturing, selectedJutsu, activeEffect, handDetected, detectedSign, currentStep, progressToNext]);
 
   const handleSelectJutsu = (jutsu: Jutsu) => {
+    if (modelState !== 'ready') return;
     setSelectedJutsu(jutsu);
     setCurrentStep(0);
     setIsCapturing(true);
@@ -186,15 +195,25 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col items-center p-4 md:p-8 bg-[#0c0c0c] text-[#e5e5e5]">
       <header className="w-full max-w-[1600px] flex justify-between items-center mb-8 border-b border-orange-900 pb-4">
         <div>
-          <h1 className="text-4xl md:text-5xl font-ninja text-orange-500 tracking-wider">
+          <h1 className="text-4xl md:text-5xl font-ninja text-orange-500 tracking-wider flex items-center gap-4">
             {t.title}
+            {modelState === 'loading' && (
+              <span className="text-xs font-sans text-orange-400 animate-pulse uppercase tracking-[0.2em]">
+                [ Summoning Model... ]
+              </span>
+            )}
+            {modelState === 'error' && (
+              <span className="text-xs font-sans text-red-500 uppercase tracking-[0.2em]">
+                [ Summoning Failed! ]
+              </span>
+            )}
           </h1>
           <p className="text-gray-400 italic text-sm md:text-base">{t.subtitle}</p>
         </div>
         <div className="flex items-center gap-6">
           <div className="hidden md:flex flex-col gap-1 w-48">
              <div className="flex justify-between text-[10px] font-black text-blue-400 uppercase">
-                <span>Chakra Flow</span>
+                <span>Chakra Density</span>
                 <span>{Math.round(chakra)}%</span>
              </div>
              <div className="h-2 w-full bg-zinc-800 rounded-full border border-zinc-700 overflow-hidden">
@@ -208,12 +227,16 @@ const App: React.FC = () => {
       </header>
 
       <main className="w-full max-w-[1600px] grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left: Scroll Selection */}
         <div className="lg:col-span-3 space-y-4">
           <h2 className="text-xl font-ninja text-blue-400 uppercase mb-4">{t.jutsuScrolls}</h2>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
             {JUTSU_LIST.map(jutsu => (
-              <button key={jutsu.id} onClick={() => handleSelectJutsu(jutsu)} className={`w-full text-left p-4 rounded-xl border-2 transition-all group ${selectedJutsu?.id === jutsu.id ? 'bg-orange-900/40 border-orange-500 shadow-lg' : 'bg-zinc-900 border-zinc-800 hover:border-blue-500 hover:bg-zinc-800'}`}>
+              <button 
+                key={jutsu.id} 
+                disabled={modelState !== 'ready'}
+                onClick={() => handleSelectJutsu(jutsu)} 
+                className={`w-full text-left p-4 rounded-xl border-2 transition-all group ${modelState !== 'ready' ? 'opacity-50 cursor-not-allowed' : ''} ${selectedJutsu?.id === jutsu.id ? 'bg-orange-900/40 border-orange-500 shadow-lg' : 'bg-zinc-900 border-zinc-800 hover:border-blue-500 hover:bg-zinc-800'}`}
+              >
                 <div className="flex justify-between items-start mb-1">
                   <span className={`text-base font-ninja ${selectedJutsu?.id === jutsu.id ? 'text-orange-400' : 'text-white'}`}>{jutsu.name[lang]}</span>
                   <span className="text-[9px] px-2 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-zinc-400 group-hover:text-blue-400">{jutsu.difficulty}</span>
@@ -226,14 +249,37 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Center: Training Grounds */}
         <div className="lg:col-span-7 flex flex-col items-center">
           <div className={`relative w-full aspect-video rounded-2xl overflow-hidden border-4 ${activeEffect ? 'border-orange-500 fire-glow' : 'border-zinc-800'} bg-black shadow-2xl transition-all duration-300`}>
             {!isCapturing && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900/95 z-50 text-center">
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900/95 z-50 text-center p-8">
                 <div className="w-16 h-16 mb-4 shuriken-spin opacity-20"><svg viewBox="0 0 100 100" className="fill-orange-500"><path d="M50 0L60 40L100 50L60 60L50 100L40 60L0 50L40 40Z"/></svg></div>
-                <h3 className="text-3xl font-ninja text-orange-500 mb-2">{t.selectJutsu}</h3>
-                <p className="text-zinc-500 text-sm">{t.selectJutsuSub}</p>
+                
+                {modelState === 'error' ? (
+                  <div className="flex flex-col items-center gap-4">
+                    <h3 className="text-3xl font-ninja text-red-500 mb-2">Summoning Failed</h3>
+                    <p className="text-zinc-500 text-sm max-w-md">Your network or browser blocked the neural scrolls. Please check your connection and try again.</p>
+                    <button 
+                      onClick={loadModel}
+                      className="px-6 py-3 bg-orange-600 hover:bg-orange-500 text-white font-ninja rounded-lg transition-colors shadow-lg"
+                    >
+                      Retry Ritual
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <h3 className="text-3xl font-ninja text-orange-500 mb-2">{t.selectJutsu}</h3>
+                    <p className="text-zinc-500 text-sm max-w-md">{t.selectJutsuSub}</p>
+                    {modelState === 'loading' && (
+                      <div className="mt-8 flex flex-col items-center gap-2">
+                        <div className="w-48 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                          <div className="h-full bg-orange-500 animate-[loading_2s_ease-in-out_infinite]"></div>
+                        </div>
+                        <span className="text-[10px] text-orange-900 uppercase font-black tracking-widest">Loading YOLOX Neural Scroll</span>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
 
@@ -243,7 +289,7 @@ const App: React.FC = () => {
             {isCapturing && !activeEffect && (
               <>
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-20">
-                  <img src={currentSign?.imageUrl} alt="Guide" className="w-64 h-64 object-contain opacity-20 mix-blend-screen" />
+                  <img src={currentSign?.imageUrl} alt="Guide" className="w-64 h-64 object-contain opacity-20 mix-blend-screen grayscale" />
                 </div>
                 
                 <div className="absolute bottom-8 w-full flex justify-center z-30 pointer-events-none">
@@ -251,14 +297,14 @@ const App: React.FC = () => {
                        <div className="w-8 h-8">
                           <svg className="w-full h-full transform -rotate-90">
                             <circle cx="16" cy="16" r="14" fill="transparent" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
-                            <circle cx="16" cy="16" r="14" fill="transparent" stroke={localDetectedSign === selectedJutsu?.sequence[currentStep] ? "#10b981" : "#3b82f6"} strokeWidth="3" 
+                            <circle cx="16" cy="16" r="14" fill="transparent" stroke={detectedSign === selectedJutsu?.sequence[currentStep] ? "#10b981" : "#3b82f6"} strokeWidth="3" 
                               strokeDasharray={88} strokeDashoffset={88 - (88 * scanProgress) / 100} />
                           </svg>
                        </div>
                        <div className="flex flex-col">
-                          <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Sign Status</span>
+                          <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">YOLOX Detection: {getPoseDescription()}</span>
                           <span className="text-base font-ninja text-white tracking-wider">
-                            {handDetected ? (localDetectedSign === selectedJutsu?.sequence[currentStep] ? "SEAL READY!" : "KEEP FORM...") : "WAITING FOR HANDS"}
+                            {handDetected ? (detectedSign === selectedJutsu?.sequence[currentStep] ? "SEAL RECOGNIZED!" : `PERFORM ${currentSign?.name[lang].toUpperCase()}`) : "ALIGNING SENSES..."}
                           </span>
                        </div>
                     </div>
@@ -274,7 +320,7 @@ const App: React.FC = () => {
                   </video>
                 )}
                 <div className="absolute inset-0 bg-orange-500/10 animate-pulse"></div>
-                <h2 className="absolute z-50 text-6xl md:text-9xl font-ninja text-white uppercase drop-shadow-[0_0_50px_rgba(255,165,0,0.9)] scale-110 animate-pulse">
+                <h2 className="absolute z-50 text-6xl md:text-9xl font-ninja text-white uppercase drop-shadow-[0_0_50px_rgba(255,165,0,0.9)] scale-110 animate-pulse text-center px-4">
                   {JUTSU_LIST.find(j => j.id === activeEffect)?.name[lang]}
                 </h2>
               </div>
@@ -291,7 +337,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Right: Guide */}
         <div className="lg:col-span-2">
           <h2 className="text-xl font-ninja text-blue-400 uppercase mb-4">{t.sealGuide}</h2>
           {currentSign ? (
@@ -308,11 +353,18 @@ const App: React.FC = () => {
             </div>
           ) : (
             <div className="bg-zinc-900/30 rounded-2xl p-6 border border-dashed border-zinc-800 text-center min-h-[200px] flex items-center justify-center text-zinc-600 text-xs italic">
-               The path to power requires a choice. Select a scroll.
+               The path of a ninja starts with a single seal. Choose wisely.
             </div>
           )}
         </div>
       </main>
+
+      <style>{`
+        @keyframes loading {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
     </div>
   );
 };
